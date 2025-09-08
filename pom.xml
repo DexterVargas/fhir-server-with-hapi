@@ -78,6 +78,21 @@
             <artifactId>hapi-fhir-structures-r5</artifactId>
             <version>${hapifhir_version}</version>
         </dependency>
+
+        <!-- This dependency is used for the "FHIR Tester" web app overlay -->
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-testpage-overlay</artifactId>
+            <version>${hapifhir_version}</version>
+            <type>war</type>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>ca.uhn.hapi.fhir</groupId>
+            <artifactId>hapi-fhir-testpage-overlay</artifactId>
+            <version>${hapifhir_version}</version>
+            <classifier>classes</classifier>
+        </dependency>
     </dependencies>
 
     <build>

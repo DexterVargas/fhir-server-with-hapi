@@ -6,13 +6,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.GetMapping;
 
 @SpringBootApplication
-
 public class FhirServerWithHapiApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(FhirServerWithHapiApplication.class, args);
     }
-
-
 
 }
