@@ -1,21 +1,27 @@
 package com.dexterv.fhirserverwithhapi.provider;
 import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.rest.annotation.Create;
-import ca.uhn.fhir.rest.annotation.ResourceParam;
-import ca.uhn.fhir.rest.annotation.Search;
+import ca.uhn.fhir.rest.annotation.*;
 import ca.uhn.fhir.rest.api.MethodOutcome;
+import ca.uhn.fhir.rest.param.StringParam;
 import ca.uhn.fhir.rest.server.IResourceProvider;
 import ca.uhn.fhir.rest.server.exceptions.InvalidRequestException;
+import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException;
+import com.dexterv.fhirserverwithhapi.domain.entities.PatientEntity;
+import com.dexterv.fhirserverwithhapi.repositories.PatientRepository;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.model.*;
-import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.zip.DataFormatException;
 
 @Service
 public class PatientResourceProvider implements IResourceProvider {
+
+    @Autowired
+    private PatientRepository patientRepository;
 
     // you must return the type of resource this provider serves:
     @Override
@@ -91,13 +97,52 @@ public class PatientResourceProvider implements IResourceProvider {
     public MethodOutcome createPatient(@ResourceParam Patient patient) {
         validateResource(patient);
 
+//       SAVE to In-memory save only
         // Here we are just generating IDs sequentially
         long id = myNextId++;
-
         addNewVersion(patient, id);
-
         // Let the caller know the ID of the newly created resource
         return new MethodOutcome(new IdType(id));
+
+
+
+
+//        SAVE to JPA Postgress
+//        String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
+//        PatientEntity patientEntity = new PatientEntity();
+//        patientEntity.setResource(json);
+//        patientRepository.save(patientEntity);
+//        patient.setId("Patient/" + Long.toString(patientEntity.getId()));
+//
+//        return new MethodOutcome(patient.getIdElement());
+
+    }
+
+    /**
+     * The "@Search" annotation indicates that this method supports the search operation. You may have many different method annotated with this annotation, to support many different search criteria.
+     * This example searches by family name.
+     *
+     * @param theFamilyName This operation takes one parameter which is the search criteria. It is annotated with the "@Required" annotation. This annotation takes one argument, a string containing the name of
+     *                      the search criteria. The datatype here is StringDt, but there are other possible parameter types depending on the specific search criteria.
+     * @return This method returns a list of Patients. This list may contain multiple matching resources, or it may also be empty.
+     */
+    @Search()
+    public List<Patient> findPatientsByName(@RequiredParam(name = Patient.SP_FAMILY) StringType theFamilyName) {
+        LinkedList<Patient> res = new  LinkedList<Patient>();
+
+        for (Deque<Patient> nextPatientList : myIdToPatientVersions.values()) {
+            Patient nextPatient = nextPatientList.getLast();
+            NAMELOOP:
+            for (HumanName nextHumanName : nextPatient.getName()) {
+                String nextFamilyName = nextHumanName.getFamily().toLowerCase();
+                if (theFamilyName.getValue().equals(nextFamilyName) || nextFamilyName.contains(theFamilyName.getValue())) {
+                    res.add(nextPatient);
+                    break NAMELOOP;
+                }
+            }
+        }
+        System.out.println("Found " + res.size() + " patients");
+        return res;
     }
 
     @Search
@@ -112,6 +157,76 @@ public class PatientResourceProvider implements IResourceProvider {
 
         return list;
     }
+
+    /**
+     * This is the "read" operation. The "@Read" annotation indicates that this method supports the read and/or vread operation.
+     * <p>
+     * Read operations take a single parameter annotated with the {@link IdParam} paramater, and should return a single resource instance.
+     * </p>
+     *
+     * @param id The read operation takes one parameter, which must be of type IdDt and must be annotated with the "@Read.IdParam" annotation.
+     * @return Returns a resource matching this identifier, or null if none exists.
+     */
+    @Read(version = true)
+    public Patient readPatientById(@IdParam IdType id) {
+
+        Deque<Patient> res;
+
+        try {
+            res = myIdToPatientVersions.get(id.getIdPartAsLong());
+        } catch (NumberFormatException e) {
+            /*
+             * If we can't parse the ID as a long, it's not valid so this is an unknown resource
+             */
+            throw new ResourceNotFoundException(id);
+        }
+
+        if(!id.hasVersionIdPart()){
+            return res.getLast();
+        } else {
+            for (Patient next : res){
+                String nextId = next.getIdElement().getVersionIdPart();
+                if(id.getVersionIdPart().equals(nextId)){
+                    return next;
+                }
+            }
+            // No matching version
+            throw new ResourceNotFoundException("Unknown version: " + id.getValue());
+        }
+    }
+
+    /**
+     * The "@Update" annotation indicates that this method supports replacing an existing
+     * resource (by ID) with a new instance of that resource.
+     *
+     * @param id      This is the ID of the patient to update
+     * @param patient This is the actual resource to save
+     * @return This method returns a "MethodOutcome"
+     */
+    @Update()
+    public MethodOutcome updatePatient(@IdParam IdType id, @ResourceParam Patient patient) {
+        validateResource(patient);
+
+        Long idHandler;
+
+        try{
+            idHandler = id.getIdPartAsLong();
+        } catch (InvalidRequestException e) {
+            throw new InvalidRequestException("Invalid ID " + id.getValue() + " - Must be numeric");
+        }
+
+        /*
+         * Throw an exception (HTTP 404) if the ID is not known
+         */
+        if(!myIdToPatientVersions.containsKey(idHandler)){
+            throw new ResourceNotFoundException(id);
+        }
+
+        addNewVersion(patient, idHandler);
+
+        return new MethodOutcome();
+    }
+
 
     /**
      * This method just provides simple business validation for resources we are storing.

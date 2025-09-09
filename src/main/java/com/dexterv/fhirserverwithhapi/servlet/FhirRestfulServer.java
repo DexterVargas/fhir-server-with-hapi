@@ -1,45 +1,38 @@
 package com.dexterv.fhirserverwithhapi.servlet;
 
 import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.rest.api.EncodingEnum;
 import ca.uhn.fhir.rest.server.IResourceProvider;
 import ca.uhn.fhir.rest.server.RestfulServer;
 import ca.uhn.fhir.rest.server.interceptor.ResponseHighlighterInterceptor;
 import com.dexterv.fhirserverwithhapi.provider.PatientResourceProvider;
-import jakarta.servlet.annotation.WebServlet;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 @Component
-public class FhirRestfulServer extends RestfulServer {
+public class FhirRestfulServer {
 
-    public FhirRestfulServer() {
-        super(FhirContext.forR5());
-    }
+    @Bean
+    public ServletRegistrationBean<RestfulServer> fhirServlet(PatientResourceProvider patientProvider) {
+        RestfulServer server = new RestfulServer(FhirContext.forR5());
 
-    @Override
-    protected void initialize(){
-        // Tell HAPI FHIR that we are using R5
-//        setFhirContext(FhirContext.forR5());
+//        Use this when add new RESOURCES
+//        List<IResourceProvider> providers = new ArrayList<>();
+//        providers.add(new PatientResourceProvider());
+//        setResourceProviders(providers);
 
-        // Register resource providers
-//        registerProviders(Collections.singletonList(new PatientResourceProvider()));
+        server.setResourceProviders(patientProvider);
+        server.setDefaultPrettyPrint(true);
+        server.setDefaultResponseEncoding(EncodingEnum.JSON);
+        server.registerInterceptor(new ResponseHighlighterInterceptor());
+        server.setServerName("My FhirServerWithHapi");
+        server.setServerVersion("1.0.0");
 
-        List<IResourceProvider> providers = new ArrayList<>();
-        providers.add(new PatientResourceProvider());
-        setResourceProviders(providers);
-
-
-        // Optional: set server name/version
-        setServerName("My FhirServerWithHapi");
-        setServerVersion("1.0.0");
-
-        /*
-         * Use nice coloured HTML when a browser is used to request the content
-         */
-        registerInterceptor(new ResponseHighlighterInterceptor());
+        return new ServletRegistrationBean<>(server, "/fhir/*"); // map servlet to /fhir
     }
 
 }

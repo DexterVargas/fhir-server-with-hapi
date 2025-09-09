@@ -5,7 +5,11 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.GetMapping;
 
-@SpringBootApplication
+@SpringBootApplication(
+        exclude = {
+                org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration.class
+        }
+)
 public class FhirServerWithHapiApplication {
 
     public static void main(String[] args) {
