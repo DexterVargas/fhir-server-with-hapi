@@ -9,6 +9,7 @@ import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException;
 import com.dexterv.fhirserverwithhapi.domain.entities.PatientEntity;
 import com.dexterv.fhirserverwithhapi.repositories.PatientRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.model.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,56 +18,20 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.zip.DataFormatException;
 
-@Service
+//@Service
 public class PatientResourceProvider implements IResourceProvider {
 
     @Autowired
     private PatientRepository patientRepository;
+
+    private final FhirContext fhirContext = FhirContext.forR5();
 
     // you must return the type of resource this provider serves:
     @Override
     public Class<? extends IBaseResource> getResourceType() {
         return Patient.class;
     }
-    /**
-     * This map has a resource ID as a key, and each key maps to a Deque list containing all versions of the resource with that ID.
-     */
-    private Map<Long, Deque<Patient>> myIdToPatientVersions = new HashMap <Long, Deque<Patient>>();
 
-    /**
-     * Constructor, which pre-populates the provider with one resource instance.
-     */
-    private long myNextId = 1;
-
-    /**
-     * Constructor, which pre-populates the provider with one resource instance.
-     */
-    public PatientResourceProvider() {
-        long resourceId = myNextId++;
-
-        Patient patient = new Patient();
-        patient.setId(Long.toString(resourceId));
-        patient.addIdentifier();
-        patient.getIdentifier().getFirst().setSystem("urn:uuid:" + resourceId);
-        patient.getIdentifier().getFirst().setValue("00002");
-        patient.addName().setFamily("Test");
-        patient.getName().getFirst().addGiven("PatientOne");
-        patient.setGender(Enumerations.AdministrativeGender.FEMALE);
-
-        LinkedList<Patient> list = new LinkedList<>();
-
-        list.add(patient);
-
-        FhirContext ctx = FhirContext.forR5();
-        // Convert to JSON String
-        String encoded = ctx.newJsonParser().setPrettyPrint(true).encodeResourceToString(patient);
-
-        System.out.println(encoded);
-        System.out.println(myIdToPatientVersions);
-        System.out.println(myNextId);
-
-        myIdToPatientVersions.put(resourceId, list);
-    }
 
     /**
      * Stores a new version of the patient in memory so that it can be retrieved later.
@@ -74,47 +39,39 @@ public class PatientResourceProvider implements IResourceProvider {
      * @param patient The patient resource to store
      * @param Id      The ID of the patient to retrieve
      */
-    public void addNewVersion(Patient patient,  long Id) {
-        if(!myIdToPatientVersions.containsKey(Id)) {
-            myIdToPatientVersions.put(Id, new LinkedList<>());
-        }
-
-        patient.getMeta().setLastUpdatedElement(InstantType.withCurrentTime());
-
-        Deque<Patient> existingVersions = myIdToPatientVersions.get(Id);
-
-        // We just use the current number of versions as the next version number
-        String newVersion = Integer.toString(existingVersions.size());
-
-        // Create an ID with the new version and assign it back to the resource
-        IdType newId = new IdType("Patient", Long.toString(Id), newVersion);
-        patient.setId(newId);
-
-        existingVersions.add(patient);
-    }
+//    public void addNewVersion(Patient patient,  UUID Id) {
+//        if(!myIdToPatientVersions.containsKey(Id)) {
+//            myIdToPatientVersions.put(Id, new LinkedList<>());
+//        }
+//
+//        patient.getMeta().setLastUpdatedElement(InstantType.withCurrentTime());
+//
+//        Deque<Patient> existingVersions = myIdToPatientVersions.get(Id);
+//
+//        // We just use the current number of versions as the next version number
+//        String newVersion = Integer.toString(existingVersions.size());
+//
+//        // Create an ID with the new version and assign it back to the resource
+//        IdType newId = new IdType("Patient", Long.toString(Id), newVersion);
+//        patient.setId(newId);
+//
+//        existingVersions.add(patient);
+//    }
 
     @Create()
     public MethodOutcome createPatient(@ResourceParam Patient patient) {
         validateResource(patient);
 
-//       SAVE to In-memory save only
-        // Here we are just generating IDs sequentially
-        long id = myNextId++;
-        addNewVersion(patient, id);
-        // Let the caller know the ID of the newly created resource
-        return new MethodOutcome(new IdType(id));
-
-
-
-
 //        SAVE to JPA Postgress
-//        String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
-//        PatientEntity patientEntity = new PatientEntity();
-//        patientEntity.setResource(json);
-//        patientRepository.save(patientEntity);
-//        patient.setId("Patient/" + Long.toString(patientEntity.getId()));
-//
-//        return new MethodOutcome(patient.getIdElement());
+        String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
+        PatientEntity patientEntity = new PatientEntity();
+        patientEntity.setResource(json);
+        patientRepository.save(patientEntity);
+
+        // Set FHIR ID from DB ID
+        patient.setId("Patient/" + patientEntity.getId());
+
+        return new MethodOutcome(patient.getIdElement());
 
     }
 
@@ -126,37 +83,37 @@ public class PatientResourceProvider implements IResourceProvider {
      *                      the search criteria. The datatype here is StringDt, but there are other possible parameter types depending on the specific search criteria.
      * @return This method returns a list of Patients. This list may contain multiple matching resources, or it may also be empty.
      */
-    @Search()
-    public List<Patient> findPatientsByName(@RequiredParam(name = Patient.SP_FAMILY) StringType theFamilyName) {
-        LinkedList<Patient> res = new  LinkedList<Patient>();
-
-        for (Deque<Patient> nextPatientList : myIdToPatientVersions.values()) {
-            Patient nextPatient = nextPatientList.getLast();
-            NAMELOOP:
-            for (HumanName nextHumanName : nextPatient.getName()) {
-                String nextFamilyName = nextHumanName.getFamily().toLowerCase();
-                if (theFamilyName.getValue().equals(nextFamilyName) || nextFamilyName.contains(theFamilyName.getValue())) {
-                    res.add(nextPatient);
-                    break NAMELOOP;
-                }
-            }
-        }
-        System.out.println("Found " + res.size() + " patients");
-        return res;
-    }
+//    @Search()
+//    public List<Patient> findPatientsByName(@RequiredParam(name = Patient.SP_FAMILY) StringType theFamilyName) {
+//        LinkedList<Patient> res = new  LinkedList<Patient>();
+//
+//        for (Deque<Patient> nextPatientList : myIdToPatientVersions.values()) {
+//            Patient nextPatient = nextPatientList.getLast();
+//            NAMELOOP:
+//            for (HumanName nextHumanName : nextPatient.getName()) {
+//                String nextFamilyName = nextHumanName.getFamily().toLowerCase();
+//                if (theFamilyName.getValue().equals(nextFamilyName) || nextFamilyName.contains(theFamilyName.getValue())) {
+//                    res.add(nextPatient);
+//                    break NAMELOOP;
+//                }
+//            }
+//        }
+//        System.out.println("Found " + res.size() + " patients");
+//        return res;
+//    }
 
     @Search
-    public List<Patient> searchPatient(){
-        LinkedList<Patient> list = new LinkedList<Patient>();
-
-        for(Deque<Patient> versions : myIdToPatientVersions.values()){
-            Patient nextPatient = versions.getLast();
-
-            list.add(nextPatient);
-        }
-
-        return list;
-    }
+//    public List<Patient> searchPatient(){
+//        LinkedList<Patient> list = new LinkedList<Patient>();
+//
+//        for(Deque<Patient> versions : myIdToPatientVersions.values()){
+//            Patient nextPatient = versions.getLast();
+//
+//            list.add(nextPatient);
+//        }
+//
+//        return list;
+//    }
 
     /**
      * This is the "read" operation. The "@Read" annotation indicates that this method supports the read and/or vread operation.
@@ -170,29 +127,14 @@ public class PatientResourceProvider implements IResourceProvider {
     @Read(version = true)
     public Patient readPatientById(@IdParam IdType id) {
 
-        Deque<Patient> res;
+        Long patientId = Long.parseLong(id.getIdPart());
+        System.out.println("Reading Patient by ID: " + patientId);
 
-        try {
-            res = myIdToPatientVersions.get(id.getIdPartAsLong());
-        } catch (NumberFormatException e) {
-            /*
-             * If we can't parse the ID as a long, it's not valid so this is an unknown resource
-             */
-            throw new ResourceNotFoundException(id);
-        }
+        PatientEntity patientEntity = patientRepository.findById(patientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + patientId + " not found"));
 
-        if(!id.hasVersionIdPart()){
-            return res.getLast();
-        } else {
-            for (Patient next : res){
-                String nextId = next.getIdElement().getVersionIdPart();
-                if(id.getVersionIdPart().equals(nextId)){
-                    return next;
-                }
-            }
-            // No matching version
-            throw new ResourceNotFoundException("Unknown version: " + id.getValue());
-        }
+        return (Patient) fhirContext.newJsonParser()
+                .parseResource(patientEntity.getResource());
     }
 
     /**
@@ -203,29 +145,29 @@ public class PatientResourceProvider implements IResourceProvider {
      * @param patient This is the actual resource to save
      * @return This method returns a "MethodOutcome"
      */
-    @Update()
-    public MethodOutcome updatePatient(@IdParam IdType id, @ResourceParam Patient patient) {
-        validateResource(patient);
-
-        Long idHandler;
-
-        try{
-            idHandler = id.getIdPartAsLong();
-        } catch (InvalidRequestException e) {
-            throw new InvalidRequestException("Invalid ID " + id.getValue() + " - Must be numeric");
-        }
-
-        /*
-         * Throw an exception (HTTP 404) if the ID is not known
-         */
-        if(!myIdToPatientVersions.containsKey(idHandler)){
-            throw new ResourceNotFoundException(id);
-        }
-
-        addNewVersion(patient, idHandler);
-
-        return new MethodOutcome();
-    }
+//    @Update()
+//    public MethodOutcome updatePatient(@IdParam IdType id, @ResourceParam Patient patient) {
+//        validateResource(patient);
+//
+//        Long idHandler;
+//
+//        try{
+//            idHandler = id.getIdPartAsLong();
+//        } catch (InvalidRequestException e) {
+//            throw new InvalidRequestException("Invalid ID " + id.getValue() + " - Must be numeric");
+//        }
+//
+//        /*
+//         * Throw an exception (HTTP 404) if the ID is not known
+//         */
+//        if(!myIdToPatientVersions.containsKey(idHandler)){
+//            throw new ResourceNotFoundException(id);
+//        }
+//
+//        addNewVersion(patient, idHandler);
+//
+//        return new MethodOutcome();
+//    }
 
 
     /**

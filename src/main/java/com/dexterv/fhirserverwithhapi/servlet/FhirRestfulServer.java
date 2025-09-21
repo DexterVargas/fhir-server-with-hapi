@@ -35,4 +35,5 @@ public class FhirRestfulServer {
         return new ServletRegistrationBean<>(server, "/fhir/*"); // map servlet to /fhir
     }
 
+
 }

@@ -14,7 +14,15 @@ services:
     # read configuration, here we set the password.
     # ⚠ - Do no store plaintext passwords in source control. We
     # do so here as this is a builder.
+    container_name: fhir-server-db
     environment:
-      POSTGRES_PASSWORD: fhir_pass
       POSTGRES_USER: fhir_user
+      POSTGRES_PASSWORD: fhir_pass
       POSTGRES_DB: fhir_db
+
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
+
