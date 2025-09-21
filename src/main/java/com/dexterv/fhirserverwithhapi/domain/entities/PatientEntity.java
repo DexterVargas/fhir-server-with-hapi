@@ -3,8 +3,6 @@ package com.dexterv.fhirserverwithhapi.domain.entities;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.util.UUID;
-
 @Entity
 @Table(name="patients")
 @Getter
@@ -18,6 +16,6 @@ public class PatientEntity {
     @Column(name="id", updatable = false, nullable = false)
     private Long id;
 
-    @Column(name = "RES_TYPE", nullable = false)
+    @Column(columnDefinition = "TEXT", nullable = false)
     private String resource;
 }

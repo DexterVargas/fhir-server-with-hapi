@@ -9,21 +9,24 @@ import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException;
 import com.dexterv.fhirserverwithhapi.domain.entities.PatientEntity;
 import com.dexterv.fhirserverwithhapi.repositories.PatientRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.model.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.zip.DataFormatException;
 
-//@Service
+@Component
+@RequiredArgsConstructor
 public class PatientResourceProvider implements IResourceProvider {
 
-    @Autowired
-    private PatientRepository patientRepository;
-
+    private final PatientRepository patientRepository;
     private final FhirContext fhirContext = FhirContext.forR5();
 
     // you must return the type of resource this provider serves:
@@ -65,6 +68,8 @@ public class PatientResourceProvider implements IResourceProvider {
 //        SAVE to JPA Postgress
         String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
         PatientEntity patientEntity = new PatientEntity();
+//        PatientEntity patientEntity = PatientEntity.builder().resource(json).build();
+
         patientEntity.setResource(json);
         patientRepository.save(patientEntity);
 
@@ -74,46 +79,6 @@ public class PatientResourceProvider implements IResourceProvider {
         return new MethodOutcome(patient.getIdElement());
 
     }
-
-    /**
-     * The "@Search" annotation indicates that this method supports the search operation. You may have many different method annotated with this annotation, to support many different search criteria.
-     * This example searches by family name.
-     *
-     * @param theFamilyName This operation takes one parameter which is the search criteria. It is annotated with the "@Required" annotation. This annotation takes one argument, a string containing the name of
-     *                      the search criteria. The datatype here is StringDt, but there are other possible parameter types depending on the specific search criteria.
-     * @return This method returns a list of Patients. This list may contain multiple matching resources, or it may also be empty.
-     */
-//    @Search()
-//    public List<Patient> findPatientsByName(@RequiredParam(name = Patient.SP_FAMILY) StringType theFamilyName) {
-//        LinkedList<Patient> res = new  LinkedList<Patient>();
-//
-//        for (Deque<Patient> nextPatientList : myIdToPatientVersions.values()) {
-//            Patient nextPatient = nextPatientList.getLast();
-//            NAMELOOP:
-//            for (HumanName nextHumanName : nextPatient.getName()) {
-//                String nextFamilyName = nextHumanName.getFamily().toLowerCase();
-//                if (theFamilyName.getValue().equals(nextFamilyName) || nextFamilyName.contains(theFamilyName.getValue())) {
-//                    res.add(nextPatient);
-//                    break NAMELOOP;
-//                }
-//            }
-//        }
-//        System.out.println("Found " + res.size() + " patients");
-//        return res;
-//    }
-
-    @Search
-//    public List<Patient> searchPatient(){
-//        LinkedList<Patient> list = new LinkedList<Patient>();
-//
-//        for(Deque<Patient> versions : myIdToPatientVersions.values()){
-//            Patient nextPatient = versions.getLast();
-//
-//            list.add(nextPatient);
-//        }
-//
-//        return list;
-//    }
 
     /**
      * This is the "read" operation. The "@Read" annotation indicates that this method supports the read and/or vread operation.
@@ -127,14 +92,30 @@ public class PatientResourceProvider implements IResourceProvider {
     @Read(version = true)
     public Patient readPatientById(@IdParam IdType id) {
 
-        Long patientId = Long.parseLong(id.getIdPart());
+        Long patientId;
+
+        try {
+            patientId = Long.parseLong(id.getIdPart());
+        } catch (NumberFormatException e) {
+            throw new ResourceNotFoundException("Invalid with ID " + id.getIdPart() + " not found");
+        }
+
+
         System.out.println("Reading Patient by ID: " + patientId);
 
-        PatientEntity patientEntity = patientRepository.findById(patientId)
+        PatientEntity entity = patientRepository.findById(patientId)
                 .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + patientId + " not found"));
 
-        return (Patient) fhirContext.newJsonParser()
-                .parseResource(patientEntity.getResource());
+        Patient patient = (Patient) fhirContext
+                .newJsonParser()
+                .parseResource(entity.getResource());
+
+        // 🔑 Always set the FHIR id before returning
+        patient.setId("Patient/" + entity.getId());
+
+        return patient;
+//        return (Patient) fhirContext.newJsonParser()
+//                .parseResource(patientEntity.getResource());
     }
 
     /**
@@ -169,7 +150,33 @@ public class PatientResourceProvider implements IResourceProvider {
 //        return new MethodOutcome();
 //    }
 
+    @Search
+    public List<Patient> getAllPatients(
+//            @OptionalParam(name = "_count") Integer count,
+//            @OptionalParam(name = "_offset") Integer offset
+    ) {
 
+//        Integer pageSize = (count != null && count>0) ? count : 10;
+//        Integer pageOffset = (offset != null && offset>0) ? offset : 0;
+//        Pageable pageable = PageRequest.of(pageOffset / pageSize, pageSize);
+
+//        List<PatientEntity> entities = patientRepository.findAll(pageable).getContent();
+        List<PatientEntity> entities = patientRepository.findAll();
+
+        List<Patient> patients = new ArrayList<>();
+
+        for (PatientEntity entity : entities) {
+            System.out.println(entity);
+            Patient patient = (Patient) fhirContext
+                    .newJsonParser()
+                    .parseResource(entity.getResource());
+            // 🔑 Set ID (must exist in FHIR)
+            patient.setId("Patient/" + entity.getId());
+            patients.add(patient);
+        }
+
+        return patients;
+    }
     /**
      * This method just provides simple business validation for resources we are storing.
      *
@@ -181,7 +188,7 @@ public class PatientResourceProvider implements IResourceProvider {
             outcome.addIssue()
                     .setSeverity(OperationOutcome.IssueSeverity.FATAL)
                     .setDiagnostics("No Family name [provided, Patient resources must have at least one family name.");
-            throw new UnprocessableEntityException(FhirContext.forR5Cached(),  outcome);
+            throw new UnprocessableEntityException(fhirContext,  outcome);
         }
     }
 }
