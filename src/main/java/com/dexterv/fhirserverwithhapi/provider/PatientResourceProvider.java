@@ -1,26 +1,19 @@
 package com.dexterv.fhirserverwithhapi.provider;
 import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.i18n.Msg;
 import ca.uhn.fhir.rest.annotation.*;
 import ca.uhn.fhir.rest.api.MethodOutcome;
-import ca.uhn.fhir.rest.param.StringParam;
 import ca.uhn.fhir.rest.server.IResourceProvider;
-import ca.uhn.fhir.rest.server.exceptions.InvalidRequestException;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException;
 import com.dexterv.fhirserverwithhapi.domain.entities.PatientEntity;
 import com.dexterv.fhirserverwithhapi.repositories.PatientRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.model.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.zip.DataFormatException;
 
 @Component
 @RequiredArgsConstructor
@@ -29,12 +22,14 @@ public class PatientResourceProvider implements IResourceProvider {
     private final PatientRepository patientRepository;
     private final FhirContext fhirContext = FhirContext.forR5();
 
-    // you must return the type of resource this provider serves:
     @Override
     public Class<? extends IBaseResource> getResourceType() {
         return Patient.class;
     }
 
+    // https://hapifhir.io/hapi-fhir/docs/server_plain/resource_providers.html#resource-providers
+    // https://hapifhir.io/hapi-fhir/apidocs/hapi-fhir-server/index-all.html
+    // https://hapifhir.io/hapi-fhir/docs/server_plain/rest_operations.html
 
     /**
      * Stores a new version of the patient in memory so that it can be retrieved later.
@@ -60,23 +55,46 @@ public class PatientResourceProvider implements IResourceProvider {
 //
 //        existingVersions.add(patient);
 //    }
+    /**
+     * The "@Create" annotation indicates that this method implements "create=type", which adds a
+     * new instance of a resource to the server.
+     */
 
+    // @Create()  What it is: A HAPI-FHIR server annotation that marks this method as the handler for create operations (i.e. HTTP POST /Patient).
+            //    What HAPI does: When a client POSTs a Patient resource, HAPI will call this method and pass the parsed Patient object.
+    //    MethodOutcome — HAPI-FHIR class used to describe the result of the operation (id, created flag, OperationOutcome, returned resource, etc.).
+    //                    HAPI uses it to generate the HTTP response.
+    //    @ResourceParam Patient patient — HAPI injects the incoming resource (parsed from the HTTP body) into this parameter.
+    //    You get a Patient object already populated from the request.
     @Create()
     public MethodOutcome createPatient(@ResourceParam Patient patient) {
+
+        Identifier identifier = patient.addIdentifier();
+        identifier.setSystem("com.dexterv.fhirserverwithhapi"); // I just set it to this atm
+        String randomVal = "dexterv" + UUID.randomUUID().toString();
+        identifier.setValue(randomVal);
+
+        // **** hapi fhir fluent coding
+        // patient.addIdentifier().setSystem("com.dexterv.fhirserverwithhapi").setValue(randomVal);
+
+
         validateResource(patient);
-
-//        SAVE to JPA Postgress
-        String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
         PatientEntity patientEntity = new PatientEntity();
-//        PatientEntity patientEntity = PatientEntity.builder().resource(json).build();
+        System.out.println(String.valueOf(patientEntity.getId()));
+        // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
+        patient.setId(new IdType("Patient", String.valueOf(patientEntity.getId()), "1"));
+        System.out.println("patient getId " + patient.getId());
+        String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
 
+        // PatientEntity patientEntity = PatientEntity.builder().resource(json).build();
         patientEntity.setResource(json);
         patientRepository.save(patientEntity);
 
-        // Set FHIR ID from DB ID
-        patient.setId("Patient/" + patientEntity.getId());
+        MethodOutcome outcome = new MethodOutcome();
+        System.out.println("outcome area: " + patient.getId());
+        outcome.setId(patient.getIdElement());
 
-        return new MethodOutcome(patient.getIdElement());
+        return outcome;
 
     }
 
@@ -92,7 +110,7 @@ public class PatientResourceProvider implements IResourceProvider {
     @Read(version = true)
     public Patient readPatientById(@IdParam IdType id) {
 
-        Long patientId;
+        long patientId;
 
         try {
             patientId = Long.parseLong(id.getIdPart());
@@ -187,8 +205,12 @@ public class PatientResourceProvider implements IResourceProvider {
             OperationOutcome outcome = new OperationOutcome();
             outcome.addIssue()
                     .setSeverity(OperationOutcome.IssueSeverity.FATAL)
-                    .setDiagnostics("No Family name [provided, Patient resources must have at least one family name.");
+                    .setDiagnostics("No Family name provided, Patient resources must have at least one family name.");
             throw new UnprocessableEntityException(fhirContext,  outcome);
+        }
+
+        if(patient.getIdentifierFirstRep().isEmpty()) {
+            throw new UnprocessableEntityException(Msg.code(636) + "No identifier supplied");
         }
     }
 }
