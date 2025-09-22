@@ -69,23 +69,26 @@ public class PatientResourceProvider implements IResourceProvider {
     @Create()
     public MethodOutcome createPatient(@ResourceParam Patient patient) {
 
+        // Manual add identifier atm
         Identifier identifier = patient.addIdentifier();
         identifier.setSystem("com.dexterv.fhirserverwithhapi"); // I just set it to this atm
         String randomVal = "dexterv" + UUID.randomUUID().toString();
         identifier.setValue(randomVal);
-
+        
+        
         // **** hapi fhir fluent coding
         // patient.addIdentifier().setSystem("com.dexterv.fhirserverwithhapi").setValue(randomVal);
 
 
         validateResource(patient);
         PatientEntity patientEntity = new PatientEntity();
-        System.out.println(String.valueOf(patientEntity.getId()));
+
         // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
         patient.setId(new IdType("Patient", String.valueOf(patientEntity.getId()), "1"));
         System.out.println("patient getId " + patient.getId());
         String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
 
+        // if you want to
         // PatientEntity patientEntity = PatientEntity.builder().resource(json).build();
         patientEntity.setResource(json);
         patientRepository.save(patientEntity);
@@ -124,6 +127,7 @@ public class PatientResourceProvider implements IResourceProvider {
         PatientEntity entity = patientRepository.findById(patientId)
                 .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + patientId + " not found"));
 
+        System.out.println(entity.getId() + ": " + entity.getResource());
         Patient patient = (Patient) fhirContext
                 .newJsonParser()
                 .parseResource(entity.getResource());
