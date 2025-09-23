@@ -4,6 +4,7 @@ import ca.uhn.fhir.i18n.Msg;
 import ca.uhn.fhir.rest.annotation.*;
 import ca.uhn.fhir.rest.api.MethodOutcome;
 import ca.uhn.fhir.rest.server.IResourceProvider;
+import ca.uhn.fhir.rest.server.exceptions.InvalidRequestException;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException;
 import com.dexterv.fhirserverwithhapi.domain.entities.PatientEntity;
@@ -11,6 +12,7 @@ import com.dexterv.fhirserverwithhapi.repositories.PatientRepository;
 import lombok.RequiredArgsConstructor;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.model.*;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -74,29 +76,39 @@ public class PatientResourceProvider implements IResourceProvider {
         identifier.setSystem("com.dexterv.fhirserverwithhapi"); // I just set it to this atm
         String randomVal = "dexterv" + UUID.randomUUID().toString();
         identifier.setValue(randomVal);
-        
-        
+
         // **** hapi fhir fluent coding
         // patient.addIdentifier().setSystem("com.dexterv.fhirserverwithhapi").setValue(randomVal);
 
-
         validateResource(patient);
-        PatientEntity patientEntity = new PatientEntity();
 
-        // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
-        patient.setId(new IdType("Patient", String.valueOf(patientEntity.getId()), "1"));
-        System.out.println("patient getId " + patient.getId());
         String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
 
-        // if you want to
+        PatientEntity patientEntity = new PatientEntity();
         // PatientEntity patientEntity = PatientEntity.builder().resource(json).build();
         patientEntity.setResource(json);
-        patientRepository.save(patientEntity);
+        patientEntity.setVersion(1);
+        PatientEntity savedEntity = patientRepository.save(patientEntity);
+        
+        System.out.println("patient getId " + savedEntity.getId());
+
+        // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
+        patient.setId(
+                new IdType(
+                        "Patient",
+                        savedEntity.getId().toString()));
+        patient.getMeta().setVersionId(savedEntity.getVersion().toString());
+        // if you want to
+
 
         MethodOutcome outcome = new MethodOutcome();
-        System.out.println("outcome area: " + patient.getId());
-        outcome.setId(patient.getIdElement());
+        System.out.println("outcome area: " + savedEntity.getResource());
+        outcome.setCreated(true);
+//        outcome.setId(patient.getIdElement());
+        outcome.setId(new IdType("Patient", savedEntity.getId().toString(), savedEntity.getVersion().toString()));
+        outcome.setResource(patient);
 
+        System.out.println("outcome: " + outcome.getId());
         return outcome;
 
     }
@@ -148,29 +160,74 @@ public class PatientResourceProvider implements IResourceProvider {
      * @param patient This is the actual resource to save
      * @return This method returns a "MethodOutcome"
      */
-//    @Update()
-//    public MethodOutcome updatePatient(@IdParam IdType id, @ResourceParam Patient patient) {
-//        validateResource(patient);
-//
-//        Long idHandler;
-//
-//        try{
-//            idHandler = id.getIdPartAsLong();
-//        } catch (InvalidRequestException e) {
-//            throw new InvalidRequestException("Invalid ID " + id.getValue() + " - Must be numeric");
-//        }
-//
-//        /*
-//         * Throw an exception (HTTP 404) if the ID is not known
-//         */
+    @Update()
+    public MethodOutcome updatePatient(@IdParam IdType theId, @ResourceParam Patient patient) {
+
+        Long resourceId = getValidId(theId, patient);
+
+
+        validateResource(patient);
+        String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
+
+        PatientEntity patientEntity = patientRepository.findById(resourceId)
+                .orElseThrow(new ResourceNotFoundException(resourceId));
+        patientEntity.setResource(json);
+
+        PatientEntity savedEntity = patientRepository.save(patientEntity);
+
+        System.out.println("patient getId " + savedEntity.getId());
+
+        // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
+        patient.setId(
+                new IdType(
+                        "Patient",
+                        savedEntity.getId().toString()));
+        patient.getMeta().setVersionId(savedEntity.getVersion().toString());
+        // if you want to
+
+
+        MethodOutcome outcome = new MethodOutcome();
+        System.out.println("outcome area: " + savedEntity.getResource());
+        outcome.setCreated(true);
+//        outcome.setId(patient.getIdElement());
+        outcome.setId(new IdType("Patient", savedEntity.getId().toString(), savedEntity.getVersion().toString()));
+        outcome.setResource(patient);
+
+        System.out.println("outcome: " + outcome.getId());
+        return outcome;
+
+        /*
+         * Throw an exception (HTTP 404) if the ID is not known
+         */
 //        if(!myIdToPatientVersions.containsKey(idHandler)){
 //            throw new ResourceNotFoundException(id);
 //        }
-//
-//        addNewVersion(patient, idHandler);
-//
-//        return new MethodOutcome();
-//    }
+
+
+
+        return new MethodOutcome();
+    }
+
+    private static @NotNull Long getValidId(IdType theId, Patient patient) {
+        Long resourceId;
+        String versionId = theId.getVersionIdPart();
+
+        try {
+            resourceId = Long.parseLong(theId.getIdPart());
+        } catch (NumberFormatException e) {
+            throw new NumberFormatException("Invalid ID " + theId.getValue() + " - Must be numeric");
+        }
+
+        if (null == patient.getId()) {
+            throw new InvalidRequestException("Patient with id " + resourceId + " not found!");
+        }
+
+        if(!theId.getIdPart().equals(patient.getId())) {
+            throw new InvalidRequestException(String.format("Cannot update Patient with id %s not found", resourceId));
+        }
+
+        return resourceId;
+    }
 
     @Search
     public List<Patient> getAllPatients(

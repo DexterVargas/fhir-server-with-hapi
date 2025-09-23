@@ -16,6 +16,10 @@ public class PatientEntity {
     @Column(name="id", updatable = false, nullable = false)
     private Long id;
 
+    @Version
+    @Column(name="version", nullable = false)
+    private Integer version;
+
     @Column(columnDefinition = "TEXT", nullable = false)
     private String resource;
 }
