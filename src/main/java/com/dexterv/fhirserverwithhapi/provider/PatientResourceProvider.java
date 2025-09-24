@@ -162,15 +162,22 @@ public class PatientResourceProvider implements IResourceProvider {
      */
     @Update()
     public MethodOutcome updatePatient(@IdParam IdType theId, @ResourceParam Patient patient) {
-
         Long resourceId = getValidId(theId, patient);
-
+//        String versionId = theId.getVersionIdPart();
 
         validateResource(patient);
+
         String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
 
         PatientEntity patientEntity = patientRepository.findById(resourceId)
-                .orElseThrow(new ResourceNotFoundException(resourceId));
+                .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + resourceId + " not found"));
+
+//        if(versionId != null) {
+//            if(!versionId.equals(patientEntity.getVersion())) {
+//
+//            }
+//        }
+
         patientEntity.setResource(json);
 
         PatientEntity savedEntity = patientRepository.save(patientEntity);
@@ -205,21 +212,16 @@ public class PatientResourceProvider implements IResourceProvider {
 
 
 
-        return new MethodOutcome();
+//        return new MethodOutcome();
     }
 
     private static @NotNull Long getValidId(IdType theId, Patient patient) {
         Long resourceId;
-        String versionId = theId.getVersionIdPart();
 
         try {
             resourceId = Long.parseLong(theId.getIdPart());
         } catch (NumberFormatException e) {
-            throw new NumberFormatException("Invalid ID " + theId.getValue() + " - Must be numeric");
-        }
-
-        if (null == patient.getId()) {
-            throw new InvalidRequestException("Patient with id " + resourceId + " not found!");
+            throw new InvalidRequestException("Invalid ID " + theId.getValue() + " - Must be numeric");
         }
 
         if(!theId.getIdPart().equals(patient.getId())) {
