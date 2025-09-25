@@ -20,7 +20,7 @@ public class PatientEntity {
     @Column(name="id", updatable = false, nullable = false)
     private Long id; // Internal DB ID and act as a resourceId
 
-    @Column(name="resource_id", nullable = false, updatable = false, unique = true)
+    @Column(name="resource_id", updatable = false, unique = true)
     private Long resourceId;
 
     @Version

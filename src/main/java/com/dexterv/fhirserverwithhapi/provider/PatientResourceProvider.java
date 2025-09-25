@@ -138,7 +138,7 @@ public class PatientResourceProvider implements IResourceProvider {
 
         System.out.println("Reading Patient by ID: " + patientId);
 
-        PatientEntity entity = patientRepository.findById(patientId)
+        PatientEntity entity = patientRepository.findTopByResourceIdOrderByVersionDesc(patientId)
                 .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + patientId + " not found"));
 
         Patient patient = (Patient) fhirContext
@@ -146,7 +146,7 @@ public class PatientResourceProvider implements IResourceProvider {
                 .parseResource(entity.getResource());
 
         // 🔑 Always set the FHIR id before returning
-        patient.setId(new IdType("Patient/" + entity.getId().toString(), entity.getVersion().toString()));
+        patient.setId(new IdType("Patient/" + entity.getResourceId().toString(), entity.getVersion().toString()));
         patient.getMeta().setVersionId(entity.getVersion().toString());
 
 
