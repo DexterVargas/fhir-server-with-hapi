@@ -10,6 +10,6 @@ import java.util.UUID;
 
 @Repository
 public interface PatientRepository extends JpaRepository<PatientEntity, Long> {
-    Optional<PatientEntity> findTopByIdOrderByVersionDesc(Long id);
-    List<PatientEntity> findAllByIdOrderByVersionDesc(Long id);
+    Optional<PatientEntity> findTopByResourceIdOrderByVersionDesc(Long resourceId);
+    List<PatientEntity> findAllByResourceIdOrderByVersionDesc(Long resourceId);
 }

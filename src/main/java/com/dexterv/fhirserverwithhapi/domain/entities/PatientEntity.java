@@ -18,9 +18,9 @@ public class PatientEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name="id", updatable = false, nullable = false)
-    private Long id; // Internal DB ID
+    private Long id; // Internal DB ID and act as a resourceId
 
-    @Column(name="resourceId", unique = true, updatable = true)
+    @Column(name="resource_id", nullable = false, updatable = false, unique = true)
     private Long resourceId;
 
     @Version
@@ -29,6 +29,14 @@ public class PatientEntity {
 
     private LocalDateTime lastUpdated;
 
-    @Column(columnDefinition = "TEXT", nullable = false)
+    @Column(name="resource", columnDefinition = "TEXT", nullable = false)
     private String resource;
+
+    // --- Lifecycle hook ---
+    @PostPersist
+    public void assignResourceId() {
+        if (resourceId == null) {
+            this.resourceId = this.id;
+        }
+    }
 }

@@ -9,6 +9,7 @@ import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.rest.server.exceptions.UnprocessableEntityException;
 import com.dexterv.fhirserverwithhapi.domain.entities.PatientEntity;
 import com.dexterv.fhirserverwithhapi.repositories.PatientRepository;
+import jakarta.validation.constraints.Null;
 import lombok.RequiredArgsConstructor;
 import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r5.model.*;
@@ -73,50 +74,42 @@ public class PatientResourceProvider implements IResourceProvider {
     //    You get a Patient object already populated from the request.
     @Create()
     public MethodOutcome createPatient(@ResourceParam Patient patient) {
+        LocalDateTime localDateTime = LocalDateTime.now();
+        // convert LocalDateTime → Date
+        Date date = Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
 
         // Manual add identifier atm
         Identifier identifier = patient.addIdentifier();
         identifier.setSystem("com.dexterv.fhirserverwithhapi"); // I just set it to this atm
         String randomVal = "dexterv" + UUID.randomUUID().toString();
         identifier.setValue(randomVal);
-
         // **** hapi fhir fluent coding
         // patient.addIdentifier().setSystem("com.dexterv.fhirserverwithhapi").setValue(randomVal);
 
         validateResource(patient);
 
         String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
-
-        PatientEntity patientEntity = new PatientEntity();
+        PatientEntity entity = new PatientEntity();
         // PatientEntity patientEntity = PatientEntity.builder().resource(json).build();
-        patientEntity.setResource(json);
-        patientEntity.setVersion(1);
+        entity.setResourceId(null);
+        entity.setVersion(1);
+        entity.setResource(json);
+        entity.setLastUpdated(localDateTime);
+        PatientEntity savedEntity = patientRepository.save(entity);
 
-
-        LocalDateTime localDateTime = LocalDateTime.now();
-
-// convert LocalDateTime → Date
-        Date date = Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
-
-
-        patientEntity.setLastUpdated(localDateTime);
-        PatientEntity savedEntity = patientRepository.save(patientEntity);
-
-        patientEntity.setResourceId(savedEntity.getId());
         // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
         patient.setId(
                 new IdType(
                         "Patient",
-                        patientEntity.getResourceId()));
+                        savedEntity.getResourceId()));
         patient.getMeta().setVersionId("1");
         patient.getMeta().setLastUpdated(date);
         // if you want to
 
-
         MethodOutcome outcome = new MethodOutcome();
         outcome.setCreated(true);
-//        outcome.setId(patient.getIdElement());
-        outcome.setId(new IdType("Patient", patientEntity.getResourceId().toString(), "1"));
+        // outcome.setId(patient.getIdElement());
+        outcome.setId(new IdType("Patient", savedEntity.getResourceId().toString(), "1"));
         outcome.setResource(patient);
 
         return outcome;
@@ -132,35 +125,35 @@ public class PatientResourceProvider implements IResourceProvider {
      * @param id The read operation takes one parameter, which must be of type IdDt and must be annotated with the "@Read.IdParam" annotation.
      * @return Returns a resource matching this identifier, or null if none exists.
      */
-//    @Read(version = true)
-//    public Patient readPatientById(@IdParam IdType id) {
-//
-//        long patientId;
-//
-//        try {
-//            patientId = Long.parseLong(id.getIdPart());
-//        } catch (NumberFormatException e) {
-//            throw new ResourceNotFoundException("Invalid with ID " + id.getIdPart() + " not found");
-//        }
-//
-//
-//        System.out.println("Reading Patient by ID: " + patientId);
-//
-//        PatientEntity entity = patientRepository.findById(patientId)
-//                .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + patientId + " not found"));
-//
-//        System.out.println(entity.getId() + ": " + entity.getResource());
-//        Patient patient = (Patient) fhirContext
-//                .newJsonParser()
-//                .parseResource(entity.getResource());
-//
-//        // 🔑 Always set the FHIR id before returning
-//        patient.setId("Patient/" + entity.getId());
-//
-//        return patient;
-////        return (Patient) fhirContext.newJsonParser()
-////                .parseResource(patientEntity.getResource());
-//    }
+    @Read(version = true)
+    public Patient readPatientById(@IdParam IdType id) {
+
+        long patientId;
+
+        try {
+            patientId = Long.parseLong(id.getIdPart());
+        } catch (NumberFormatException e) {
+            throw new InvalidRequestException("Invalid with ID " + id.getIdPart() + " not found");
+        }
+
+        System.out.println("Reading Patient by ID: " + patientId);
+
+        PatientEntity entity = patientRepository.findById(patientId)
+                .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + patientId + " not found"));
+
+        Patient patient = (Patient) fhirContext
+                .newJsonParser()
+                .parseResource(entity.getResource());
+
+        // 🔑 Always set the FHIR id before returning
+        patient.setId(new IdType("Patient/" + entity.getId().toString(), entity.getVersion().toString()));
+        patient.getMeta().setVersionId(entity.getVersion().toString());
+
+
+        return patient;
+        // return (Patient) fhirContext.newJsonParser()
+        //         .parseResource(patientEntity.getResource());
+    }
 
     /**
      * The "@Update" annotation indicates that this method supports replacing an existing
