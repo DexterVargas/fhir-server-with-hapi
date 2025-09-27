@@ -43,30 +43,6 @@ public class PatientResourceProvider implements IResourceProvider {
     // https://hapifhir.io/hapi-fhir/docs/server_plain/rest_operations.html
 
     /**
-     * Stores a new version of the patient in memory so that it can be retrieved later.
-     *
-     * @param patient The patient resource to store
-     * @param Id      The ID of the patient to retrieve
-     */
-//    public void addNewVersion(Patient patient,  UUID Id) {
-//        if(!myIdToPatientVersions.containsKey(Id)) {
-//            myIdToPatientVersions.put(Id, new LinkedList<>());
-//        }
-//
-//        patient.getMeta().setLastUpdatedElement(InstantType.withCurrentTime());
-//
-//        Deque<Patient> existingVersions = myIdToPatientVersions.get(Id);
-//
-//        // We just use the current number of versions as the next version number
-//        String newVersion = Integer.toString(existingVersions.size());
-//
-//        // Create an ID with the new version and assign it back to the resource
-//        IdType newId = new IdType("Patient", Long.toString(Id), newVersion);
-//        patient.setId(newId);
-//
-//        existingVersions.add(patient);
-//    }
-    /**
      * The "@Create" annotation indicates that this method implements "create=type", which adds a
      * new instance of a resource to the server.
      */
@@ -105,7 +81,6 @@ public class PatientResourceProvider implements IResourceProvider {
 
         patientRepository.save(entity);
 
-
         // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
         patient.setId(
                 new IdType(
@@ -135,18 +110,26 @@ public class PatientResourceProvider implements IResourceProvider {
      * @return Returns a resource matching this identifier, or null if none exists.
      */
     @Read(version = true)
-    public Patient readPatientById(@IdParam IdType id) {
+    public Patient readPatientById(@IdParam IdType theId) {
 
-        long patientId;
+        long resourceId;
 
         try {
-            patientId = Long.parseLong(id.getIdPart());
+            resourceId = Long.parseLong(theId.getIdPart());
         } catch (NumberFormatException e) {
-            throw new InvalidRequestException("Invalid with ID " + id.getIdPart() + " not found");
+            throw new InvalidRequestException("Invalid with ID " + theId.getIdPart() + " not found");
+        }
+        PatientEntity entity;
+        if (theId.hasVersionIdPart()) {
+            Integer versionId = Integer.parseInt(theId.getVersionIdPart());
+
+            entity = patientRepository.findByResourceIdAndVersion(resourceId, versionId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Patient/" + resourceId + "/_history/" + versionId + " not found"));
+        } else {
+            entity = patientRepository.findTopByResourceIdOrderByVersionDesc(resourceId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + resourceId + " not found"));
         }
 
-        PatientEntity entity = patientRepository.findTopByResourceIdOrderByVersionDesc(patientId)
-                .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + patientId + " not found"));
 
         Patient patient = (Patient) fhirContext
                 .newJsonParser()
@@ -248,6 +231,30 @@ public class PatientResourceProvider implements IResourceProvider {
         } catch (NumberFormatException e) {
             throw new InvalidRequestException("Patient ID must be numeric, got: " + urlId);
         }
+    }
+
+    @History
+    public List<IBaseResource> historyPatient(@IdParam IdType theId) {
+        long resourceId;
+
+        try {
+            resourceId = Long.parseLong(theId.getIdPart());
+        } catch (NumberFormatException e) {
+            throw new InvalidRequestException("Invalid with ID " + theId.getIdPart() + " not found");
+        }
+
+        List<PatientEntity> patientEntities = patientRepository.findAllByResourceIdOrderByVersionDesc(resourceId);
+
+        return patientEntities.stream()
+                .map(e-> {
+                    Patient patient = (Patient) fhirContext
+                            .newJsonParser()
+                            .parseResource(e.getResource());
+                    // 🔑 Always set the FHIR id before returning
+                    patient.setId(new IdType("Patient", e.getResourceId().toString(), e.getVersion().toString()));
+                    return patient;
+                })
+                .collect(Collectors.toList());
     }
 
     @Search

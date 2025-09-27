@@ -15,4 +15,5 @@ public interface PatientRepository extends JpaRepository<PatientEntity, Long> {
 
     Optional<PatientEntity> findTopByResourceIdOrderByVersionDesc(Long resourceId);
     List<PatientEntity> findAllByResourceIdOrderByVersionDesc(Long resourceId);
+    Optional<PatientEntity> findByResourceIdAndVersion(Long resourceId, Integer version);
 }
