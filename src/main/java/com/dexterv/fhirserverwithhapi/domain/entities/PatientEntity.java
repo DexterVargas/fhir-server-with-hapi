@@ -18,10 +18,10 @@ public class PatientEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name="id", updatable = false, nullable = false)
-    private Long id; // Internal DB ID and act as a resourceId
+    private Long id;  // internal DB PK (never exposed to FHIR)
 
-    @Column(name="resource_id", updatable = false, unique = true)
-    private Long resourceId;
+    @Column(name="resource_id", updatable = false, nullable = false)
+    private Long resourceId; // FHIR logical id (Patient/123)
 
     @Version
     @Column(name="version", nullable = false)
@@ -32,11 +32,4 @@ public class PatientEntity {
     @Column(name="resource", columnDefinition = "TEXT", nullable = false)
     private String resource;
 
-    // --- Lifecycle hook ---
-    @PostPersist
-    public void assignResourceId() {
-        if (resourceId == null) {
-            this.resourceId = this.id;
-        }
-    }
 }

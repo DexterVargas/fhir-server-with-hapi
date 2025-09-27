@@ -77,6 +77,7 @@ public class PatientResourceProvider implements IResourceProvider {
         LocalDateTime localDateTime = LocalDateTime.now();
         // convert LocalDateTime → Date
         Date date = Date.from(localDateTime.atZone(ZoneId.systemDefault()).toInstant());
+        Long resourceId = patientRepository.getNextResourceId();
 
         // Manual add identifier atm
         Identifier identifier = patient.addIdentifier();
@@ -89,19 +90,21 @@ public class PatientResourceProvider implements IResourceProvider {
         validateResource(patient);
 
         String json = FhirContext.forR5().newJsonParser().encodeResourceToString(patient);
-        PatientEntity entity = new PatientEntity();
-        // PatientEntity patientEntity = PatientEntity.builder().resource(json).build();
-        entity.setResourceId(null);
-        entity.setVersion(1);
-        entity.setResource(json);
-        entity.setLastUpdated(localDateTime);
-        PatientEntity savedEntity = patientRepository.save(entity);
+        PatientEntity entity = PatientEntity.builder()
+                .resourceId(resourceId)
+                .version(1)
+                .resource(json)
+                .lastUpdated(localDateTime)
+                .build();
+
+        patientRepository.save(entity);
+
 
         // Set Patient resource Patient/<logical id> and set default version ID for new Patient resource
         patient.setId(
                 new IdType(
                         "Patient",
-                        savedEntity.getResourceId()));
+                        entity.getResourceId()));
         patient.getMeta().setVersionId("1");
         patient.getMeta().setLastUpdated(date);
         // if you want to
@@ -109,7 +112,7 @@ public class PatientResourceProvider implements IResourceProvider {
         MethodOutcome outcome = new MethodOutcome();
         outcome.setCreated(true);
         // outcome.setId(patient.getIdElement());
-        outcome.setId(new IdType("Patient", savedEntity.getResourceId().toString(), "1"));
+        outcome.setId(new IdType("Patient", entity.getResourceId().toString(), "1"));
         outcome.setResource(patient);
 
         return outcome;
