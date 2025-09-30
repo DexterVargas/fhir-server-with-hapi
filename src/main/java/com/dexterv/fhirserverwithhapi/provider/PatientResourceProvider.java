@@ -3,6 +3,7 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.i18n.Msg;
 import ca.uhn.fhir.rest.annotation.*;
 import ca.uhn.fhir.rest.api.MethodOutcome;
+import ca.uhn.fhir.rest.param.StringParam;
 import ca.uhn.fhir.rest.server.IResourceProvider;
 import ca.uhn.fhir.rest.server.exceptions.InvalidRequestException;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
@@ -106,7 +107,7 @@ public class PatientResourceProvider implements IResourceProvider {
      * Read operations take a single parameter annotated with the {@link IdParam} paramater, and should return a single resource instance.
      * </p>
      *
-     * @param id The read operation takes one parameter, which must be of type IdDt and must be annotated with the "@Read.IdParam" annotation.
+     * @param theId The read operation takes one parameter, which must be of type IdDt and must be annotated with the "@Read.IdParam" annotation.
      * @return Returns a resource matching this identifier, or null if none exists.
      */
     @Read(version = true)
@@ -129,7 +130,6 @@ public class PatientResourceProvider implements IResourceProvider {
             entity = patientRepository.findTopByResourceIdOrderByVersionDesc(resourceId)
                     .orElseThrow(() -> new ResourceNotFoundException("Patient with ID " + resourceId + " not found"));
         }
-
 
         Patient patient = (Patient) fhirContext
                 .newJsonParser()
@@ -258,16 +258,56 @@ public class PatientResourceProvider implements IResourceProvider {
     }
 
     @Search
+    public Bundle searchPatient(
+            @OptionalParam(name = Patient.SP_FAMILY) StringParam family,
+            @OptionalParam(name = Patient.SP_GENDER) StringParam gender) {
+
+        List<PatientEntity> entities = patientRepository.findAll(); // fetch all
+
+        // I don't have separate columns (like family, gender)
+        // need to store searchable FHIR attributes (like family, given, gender) in separate DB columns in PatientEntity.
+        // Will map all search result at the moment
+        List<Patient> matched = entities.stream()
+                .map(e -> {
+                    Patient patient = (Patient) fhirContext.newJsonParser().parseResource(Patient.class, e.getResource());
+                    patient.setId(new IdType("Patient", e.getResourceId().toString(), e.getVersion().toString()));
+                    return patient;
+                })
+                .filter(p -> {
+                    boolean matches = true;
+                    if (family != null) {
+                        matches &= p.getName().stream()
+                                .anyMatch(n -> family.getValue().equalsIgnoreCase(n.getFamily()));
+                    }
+                    if (gender != null) {
+                        matches &= gender.getValue().equalsIgnoreCase(p.getGender().toCode());
+                    }
+                    return matches;
+                })
+                .toList();
+
+        // Build a Bundle response (FHIR standard for searches)
+        Bundle bundle = new Bundle();
+        bundle.setType(Bundle.BundleType.SEARCHSET);
+        bundle.setTotal(matched.size());
+
+        matched.forEach(p -> bundle.addEntry()
+                .setResource(p)
+                .setFullUrl("Patient/" + p.getIdElement().getIdPart()));
+
+        return bundle;
+    }
+
+    @Search
     public List<Patient> getAllPatients(
 //            @OptionalParam(name = "_count") Integer count,
 //            @OptionalParam(name = "_offset") Integer offset
     ) {
-
 //        Integer pageSize = (count != null && count>0) ? count : 10;
 //        Integer pageOffset = (offset != null && offset>0) ? offset : 0;
 //        Pageable pageable = PageRequest.of(pageOffset / pageSize, pageSize);
-
 //        List<PatientEntity> entities = patientRepository.findAll(pageable).getContent();
+
         List<PatientEntity> entities = patientRepository.findAll();
 
         List<Patient> patients = new ArrayList<>();
@@ -277,24 +317,19 @@ public class PatientResourceProvider implements IResourceProvider {
             Patient patient = (Patient) fhirContext
                     .newJsonParser()
                     .parseResource(entity.getResource());
-            // 🔑 Set ID (must exist in FHIR)
             patient.setId("Patient/" + entity.getId());
             patients.add(patient);
         }
 
         return patients;
     }
+
     /**
      * This method just provides simple business validation for resources we are storing.
      *
      * @param patient The patient to validate
      */
     private void validateResourceWithCustomRules(Patient patient) {
-//
-//        Optional for the mean time for identifier
-//        if(patient.getIdentifierFirstRep().isEmpty()) {
-//            throw new UnprocessableEntityException(Msg.code(636) + "No identifier supplied");
-//        }
 
         if (!patient.hasName() || patient.getNameFirstRep().getFamily() == null) {
             throw new InvalidRequestException("Patient must have a family name");
@@ -309,31 +344,27 @@ public class PatientResourceProvider implements IResourceProvider {
         }
     }
 
+    /**
+     * This method comply with FHIR specs validation
+     *
+     * @param patient The patient to validate
+     */
     private void validateWithFhirSpec(Patient patient) {
 
         ValidationResult result = fhirValidator.validateWithResult(patient);
 
-//        if (!result.isSuccessful()) {
-//            String issues = result.getMessages().stream()
-//                    .map(m -> m.getSeverity() + " - " + m.getMessage())
-//                    .reduce("", (s1, s2) -> s1 + "; " + s2);
+        if (!result.isSuccessful()) {
+            OperationOutcome outcome = new OperationOutcome();
 
-
-            if (!result.isSuccessful()) {
-                OperationOutcome outcome = new OperationOutcome();
-
-                for (SingleValidationMessage msg : result.getMessages()) {
-                    OperationOutcome.OperationOutcomeIssueComponent issue = outcome.addIssue();
-                    issue.setSeverity(OperationOutcome.IssueSeverity.fromCode(msg.getSeverity().getCode()));
-                    issue.setCode(OperationOutcome.IssueType.PROCESSING);
-                    issue.setDiagnostics(msg.getMessage());
-                }
-
-                throw new UnprocessableEntityException(fhirContext, outcome);
+            for (SingleValidationMessage msg : result.getMessages()) {
+                OperationOutcome.OperationOutcomeIssueComponent issue = outcome.addIssue();
+                issue.setSeverity(OperationOutcome.IssueSeverity.fromCode(msg.getSeverity().getCode()));
+                issue.setCode(OperationOutcome.IssueType.PROCESSING);
+                issue.setDiagnostics(msg.getMessage());
             }
 
-//            throw new UnprocessableEntityException("FHIR Validation failed: " + issues);
-//        }
+            throw new UnprocessableEntityException(fhirContext, outcome);
+        }
 
     }
 }
