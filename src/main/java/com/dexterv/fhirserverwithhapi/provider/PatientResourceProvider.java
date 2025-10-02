@@ -39,21 +39,12 @@ public class PatientResourceProvider implements IResourceProvider {
         return Patient.class;
     }
 
-    // https://hapifhir.io/hapi-fhir/docs/server_plain/resource_providers.html#resource-providers
-    // https://hapifhir.io/hapi-fhir/apidocs/hapi-fhir-server/index-all.html
-    // https://hapifhir.io/hapi-fhir/docs/server_plain/rest_operations.html
+
 
     /**
      * The "@Create" annotation indicates that this method implements "create=type", which adds a
      * new instance of a resource to the server.
      */
-
-    // @Create()  What it is: A HAPI-FHIR server annotation that marks this method as the handler for create operations (i.e. HTTP POST /Patient).
-            //    What HAPI does: When a client POSTs a Patient resource, HAPI will call this method and pass the parsed Patient object.
-    //    MethodOutcome — HAPI-FHIR class used to describe the result of the operation (id, created flag, OperationOutcome, returned resource, etc.).
-    //                    HAPI uses it to generate the HTTP response.
-    //    @ResourceParam Patient patient — HAPI injects the incoming resource (parsed from the HTTP body) into this parameter.
-    //    You get a Patient object already populated from the request.
     @Create()
     public MethodOutcome createPatient(@ResourceParam Patient patient) {
         LocalDateTime localDateTime = LocalDateTime.now();
